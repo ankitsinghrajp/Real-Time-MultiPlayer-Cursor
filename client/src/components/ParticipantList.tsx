@@ -43,8 +43,7 @@ export function ParticipantList({
 
       {participants.map((participant) => {
         const isLocal =
-          participant.clientId ===
-          localClientId;
+          participant.clientId === localClientId;
 
         return (
           <div
@@ -72,10 +71,7 @@ export function ParticipantList({
             <span>
               {isLocal
                 ? "You"
-                : participant.clientId.slice(
-                    0,
-                    8,
-                  )}
+                : `User ${participant.clientId.slice(0, 6)}`}
             </span>
           </div>
         );

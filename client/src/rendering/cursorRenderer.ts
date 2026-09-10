@@ -10,7 +10,9 @@ export class CursorRenderer {
     const ctx = canvas.getContext("2d");
 
     if (!ctx) {
-      throw new Error("Canvas 2D context is not available");
+      throw new Error(
+        "Canvas 2D context is not available",
+      );
     }
 
     this.ctx = ctx;
@@ -20,11 +22,16 @@ export class CursorRenderer {
     localPosition: { x: number; y: number },
     remoteCursors: RemoteCursor[],
   ) {
-    const { width, height } = this.canvas;
+    const { width, height } =
+      this.canvas;
 
-    this.ctx.clearRect(0, 0, width, height);
+    this.ctx.clearRect(
+      0,
+      0,
+      width,
+      height,
+    );
 
-    // Draw local cursor
     this.drawCursor(
       localPosition.x * width,
       localPosition.y * height,
@@ -32,12 +39,11 @@ export class CursorRenderer {
       false,
     );
 
-    // Draw remote cursors
     for (const cursor of remoteCursors) {
       this.drawCursor(
         cursor.x * width,
         cursor.y * height,
-        cursor.clientId.slice(0, 6),
+        `User ${cursor.clientId.slice(0, 6)}`,
         true,
       );
     }
@@ -51,8 +57,8 @@ export class CursorRenderer {
   ) {
     const ctx = this.ctx;
 
-    // Cursor arrow
     ctx.beginPath();
+
     ctx.moveTo(x, y);
     ctx.lineTo(x, y + 20);
     ctx.lineTo(x + 6, y + 15);
@@ -62,17 +68,22 @@ export class CursorRenderer {
     ctx.lineTo(x + 18, y + 8);
     ctx.closePath();
 
-    ctx.fillStyle = remote ? "#ef4444" : "#2563eb";
+    ctx.fillStyle = remote
+      ? "#ef4444"
+      : "#2563eb";
+
     ctx.fill();
 
     ctx.strokeStyle = "#111827";
     ctx.lineWidth = 2;
+
     ctx.stroke();
 
-    // Label
-    ctx.font = "bold 13px Arial";
+    ctx.font =
+      "bold 13px Arial";
 
-    const textWidth = ctx.measureText(label).width;
+    const textWidth =
+      ctx.measureText(label).width;
 
     ctx.fillStyle = remote
       ? "rgba(239, 68, 68, 0.9)"
