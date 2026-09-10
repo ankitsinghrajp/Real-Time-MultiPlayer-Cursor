@@ -13,7 +13,7 @@ The system intentionally uses the native WebSocket protocol instead of a real-ti
                     │ React + TypeScript  │
                     │ SyncEngine          │
                     │ Interpolation       │
-                    │ Canvas Renderer      │
+                    │ Canvas Renderer     │
                     └──────────┬──────────┘
                                │
                                │ WebSocket
@@ -25,7 +25,7 @@ The system intentionally uses the native WebSocket protocol instead of a real-ti
                     │ HTTP + WebSocket    │
                     │ RoomManager         │
                     │ Room State          │
-                    │ Protocol Validator │
+                    │ Protocol Validator  │
                     └──────────┬──────────┘
                                │
                  ┌─────────────┴─────────────┐
