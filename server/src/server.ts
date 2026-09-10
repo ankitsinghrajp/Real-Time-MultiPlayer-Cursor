@@ -123,7 +123,8 @@ function sendSnapshot(
   const participants =
     room.getSnapshot().map(
       (cursor) => ({
-        clientId: cursor.clientId,
+        clientId:
+          cursor.clientId,
         x: cursor.x,
         y: cursor.y,
       }),
@@ -142,19 +143,22 @@ function sendPing(
     return;
   }
 
-  const frame = Buffer.from([
-    0x89,
-    0x00,
-  ]);
-
-  socket.write(frame);
+  socket.write(
+    Buffer.from([
+      0x89,
+      0x00,
+    ]),
+  );
 }
 
 function sendPong(
   socket: Duplex,
   payload: Buffer,
 ): void {
-  if (payload.length > 125) {
+  if (
+    socket.destroyed ||
+    payload.length > 125
+  ) {
     return;
   }
 
@@ -170,9 +174,16 @@ function sendPong(
   socket.write(frame);
 }
 
+type ParsedFrame = {
+  fin: boolean;
+  opcode: number;
+  payload: Buffer;
+  consumed: number;
+};
+
 function parseWebSocketFrame(
   buffer: Buffer,
-) {
+): ParsedFrame | null {
   if (buffer.length < 2) {
     return null;
   }
@@ -180,7 +191,20 @@ function parseWebSocketFrame(
   const firstByte = buffer[0];
   const secondByte = buffer[1];
 
-  const opcode = firstByte & 0x0f;
+  const fin =
+    (firstByte & 0x80) !== 0;
+
+  const rsv1 =
+    (firstByte & 0x40) !== 0;
+
+  const rsv2 =
+    (firstByte & 0x20) !== 0;
+
+  const rsv3 =
+    (firstByte & 0x10) !== 0;
+
+  const opcode =
+    firstByte & 0x0f;
 
   const masked =
     (secondByte & 0x80) !== 0;
@@ -190,8 +214,40 @@ function parseWebSocketFrame(
 
   let offset = 2;
 
-  if (payloadLength === 126) {
-    if (buffer.length < 4) {
+  if (
+    rsv1 ||
+    rsv2 ||
+    rsv3
+  ) {
+    throw new Error(
+      "Reserved WebSocket bits are not supported",
+    );
+  }
+
+  if (
+    opcode >= 0x8
+  ) {
+    if (!fin) {
+      throw new Error(
+        "Control frames cannot be fragmented",
+      );
+    }
+
+    if (
+      payloadLength > 125
+    ) {
+      throw new Error(
+        "Control frame payload too large",
+      );
+    }
+  }
+
+  if (
+    payloadLength === 126
+  ) {
+    if (
+      buffer.length < 4
+    ) {
       return null;
     }
 
@@ -201,8 +257,12 @@ function parseWebSocketFrame(
     offset = 4;
   }
 
-  if (payloadLength === 127) {
-    if (buffer.length < 10) {
+  if (
+    payloadLength === 127
+  ) {
+    if (
+      buffer.length < 10
+    ) {
       return null;
     }
 
@@ -211,10 +271,12 @@ function parseWebSocketFrame(
 
     if (
       length >
-      BigInt(Number.MAX_SAFE_INTEGER)
+      BigInt(
+        MAX_MESSAGE_SIZE,
+      )
     ) {
       throw new Error(
-        "Frame too large",
+        "Frame payload too large",
       );
     }
 
@@ -224,52 +286,56 @@ function parseWebSocketFrame(
     offset = 10;
   }
 
-  let mask: Buffer | null = null;
+  if (!masked) {
+    throw new Error(
+      "Client WebSocket frames must be masked",
+    );
+  }
 
-  if (masked) {
-    if (
-      buffer.length <
-      offset + 4
-    ) {
-      return null;
-    }
+  if (
+    buffer.length <
+    offset + 4
+  ) {
+    return null;
+  }
 
-    mask = buffer.subarray(
+  const mask =
+    buffer.subarray(
       offset,
       offset + 4,
     );
 
-    offset += 4;
-  }
+  offset += 4;
 
   const frameEnd =
     offset + payloadLength;
 
   if (
-    buffer.length < frameEnd
+    frameEnd >
+    buffer.length
   ) {
     return null;
   }
 
-  const payload = Buffer.from(
-    buffer.subarray(
-      offset,
-      frameEnd,
-    ),
-  );
+  const payload =
+    Buffer.from(
+      buffer.subarray(
+        offset,
+        frameEnd,
+      ),
+    );
 
-  if (mask) {
-    for (
-      let i = 0;
-      i < payload.length;
-      i++
-    ) {
-      payload[i] ^=
-        mask[i % 4];
-    }
+  for (
+    let i = 0;
+    i < payload.length;
+    i++
+  ) {
+    payload[i] ^=
+      mask[i % 4];
   }
 
   return {
+    fin,
     opcode,
     payload,
     consumed: frameEnd,
@@ -285,26 +351,34 @@ function cleanupClient(
   const clientId =
     client.clientId;
 
-  if (!roomId || !clientId) {
+  if (
+    !roomId ||
+    !clientId
+  ) {
     return;
   }
 
   const room =
-    roomManager.getRoom(roomId);
-
-  if (room) {
-    room.removeClient(
-      clientId,
+    roomManager.getRoom(
+      roomId,
     );
 
-    room.broadcast(
-      JSON.stringify({
-        type:
-          "participant_left",
-        clientId,
-      }),
-    );
+  if (!room) {
+    client.roomId = null;
+    client.clientId = null;
+    return;
   }
+
+  room.removeClient(
+    clientId,
+  );
+
+  room.broadcast(
+    JSON.stringify({
+      type: "participant_left",
+      clientId,
+    }),
+  );
 
   roomManager.removeClientFromRoom(
     roomId,
@@ -321,11 +395,17 @@ function cleanupClient(
 
 const server = createServer(
   (req, res) => {
-    if (req.url === "/health") {
-      res.writeHead(200, {
-        "Content-Type":
-          "application/json",
-      });
+    if (
+      req.url ===
+      "/health"
+    ) {
+      res.writeHead(
+        200,
+        {
+          "Content-Type":
+            "application/json",
+        },
+      );
 
       res.end(
         JSON.stringify({
@@ -340,7 +420,9 @@ const server = createServer(
 
     res.writeHead(404);
 
-    res.end("Not Found");
+    res.end(
+      "Not Found",
+    );
   },
 );
 
@@ -352,9 +434,15 @@ server.on(
         "sec-websocket-key"
       ];
 
+    const version =
+      req.headers[
+        "sec-websocket-version"
+      ];
+
     if (
       !key ||
-      Array.isArray(key)
+      Array.isArray(key) ||
+      version !== "13"
     ) {
       socket.destroy();
       return;
@@ -372,32 +460,257 @@ server.on(
       "",
     ].join("\r\n");
 
-    socket.write(response);
+    socket.write(
+      response,
+    );
 
     console.log(
       "WebSocket connected",
     );
 
-    const client: ConnectedClient = {
+    const client:
+      ConnectedClient = {
       socket,
       roomId: null,
       clientId: null,
       isAlive: true,
     };
 
-    clients.add(client);
+    clients.add(
+      client,
+    );
 
-    let buffer = Buffer.alloc(0);
+    let buffer =
+      Buffer.alloc(0);
+
+    let fragmentedMessage:
+      Buffer[] | null = null;
+
+    let fragmentedOpcode:
+      number | null = null;
+
+    let fragmentedSize = 0;
+
+    const resetFragmentation =
+      () => {
+        fragmentedMessage =
+          null;
+
+        fragmentedOpcode =
+          null;
+
+        fragmentedSize = 0;
+      };
+
+    const processTextMessage =
+      (payload: Buffer) => {
+        const raw =
+          payload.toString(
+            "utf8",
+          );
+
+        const message =
+          parseClientMessage(
+            raw,
+          );
+
+        if (!message) {
+          sendError(
+            socket,
+            "INVALID_MESSAGE",
+            "Invalid message",
+          );
+
+          return;
+        }
+
+        if (
+          message.type ===
+          "join"
+        ) {
+          if (
+            client.roomId
+          ) {
+            sendError(
+              socket,
+              "ALREADY_JOINED",
+              "Client already joined a room",
+            );
+
+            return;
+          }
+
+          client.clientId =
+            message.clientId;
+
+          client.roomId =
+            message.roomId;
+
+          const room =
+            roomManager.getOrCreateRoom(
+              message.roomId,
+            );
+
+          sendMessage(
+            socket,
+            {
+              type: "welcome",
+              clientId:
+                message.clientId,
+            },
+          );
+
+          sendSnapshot(
+            socket,
+            room,
+          );
+
+          room.addClient({
+            clientId:
+              message.clientId,
+            socket,
+          });
+
+          room.broadcast(
+            JSON.stringify({
+              type:
+                "participant_joined",
+              clientId:
+                message.clientId,
+            }),
+            message.clientId,
+          );
+
+          console.log(
+            `${message.clientId} joined ${message.roomId}`,
+          );
+
+          return;
+        }
+
+        if (
+          !client.roomId ||
+          !client.clientId
+        ) {
+          sendError(
+            socket,
+            "NOT_JOINED",
+            "Join a room first",
+          );
+
+          return;
+        }
+
+        const room =
+          roomManager.getRoom(
+            client.roomId,
+          );
+
+        if (!room) {
+          sendError(
+            socket,
+            "ROOM_NOT_FOUND",
+            "Room no longer exists",
+          );
+
+          return;
+        }
+
+        if (
+          message.type ===
+          "cursor"
+        ) {
+          const previous =
+            room.getCursor(
+              client.clientId,
+            );
+
+          if (
+            previous &&
+            message.seq <=
+              previous.seq
+          ) {
+            return;
+          }
+
+          room.updateCursor({
+            clientId:
+              client.clientId,
+            x: message.x,
+            y: message.y,
+            seq: message.seq,
+            timestamp:
+              message.timestamp,
+          });
+
+          room.broadcast(
+            JSON.stringify({
+              type: "cursor",
+              clientId:
+                client.clientId,
+              seq:
+                message.seq,
+              x: message.x,
+              y: message.y,
+              timestamp:
+                message.timestamp,
+            }),
+            client.clientId,
+          );
+
+          return;
+        }
+
+        if (
+          message.type ===
+          "reaction"
+        ) {
+          room.broadcast(
+            JSON.stringify({
+              type: "reaction",
+              clientId:
+                client.clientId,
+              seq:
+                message.seq,
+              reaction:
+                message.reaction,
+              x: message.x,
+              y: message.y,
+              timestamp:
+                message.timestamp,
+            }),
+            client.clientId,
+          );
+
+          return;
+        }
+
+        if (
+          message.type ===
+          "ping"
+        ) {
+          sendMessage(
+            socket,
+            {
+              type: "pong",
+              timestamp:
+                message.timestamp,
+            },
+          );
+        }
+      };
 
     socket.on(
       "data",
       (data: Buffer) => {
-        client.isAlive = true;
+        client.isAlive =
+          true;
 
-        buffer = Buffer.concat([
-          buffer,
-          data,
-        ]);
+        buffer =
+          Buffer.concat([
+            buffer,
+            data,
+          ]);
 
         if (
           buffer.length >
@@ -410,27 +723,33 @@ server.on(
           );
 
           socket.destroy();
-
           return;
         }
 
-        while (true) {
-          let frame;
+        while (
+          buffer.length > 0
+        ) {
+          let frame:
+            | ParsedFrame
+            | null;
 
           try {
             frame =
               parseWebSocketFrame(
                 buffer,
               );
-          } catch {
+          } catch (
+            error
+          ) {
             sendError(
               socket,
               "INVALID_FRAME",
-              "Invalid WebSocket frame",
+              error instanceof Error
+                ? error.message
+                : "Invalid WebSocket frame",
             );
 
             socket.destroy();
-
             return;
           }
 
@@ -443,18 +762,17 @@ server.on(
               frame.consumed,
             );
 
-          // Close frame
           if (
-            frame.opcode === 0x8
+            frame.opcode ===
+            0x8
           ) {
             socket.end();
-
             return;
           }
 
-          // Ping frame
           if (
-            frame.opcode === 0x9
+            frame.opcode ===
+            0x9
           ) {
             sendPong(
               socket,
@@ -464,221 +782,148 @@ server.on(
             continue;
           }
 
-          // Pong frame
           if (
-            frame.opcode === 0xa
+            frame.opcode ===
+            0xa
           ) {
-            client.isAlive = true;
+            client.isAlive =
+              true;
 
             continue;
           }
 
-          // Only process text frames
           if (
-            frame.opcode !== 0x1
-          ) {
-            continue;
-          }
-
-          const raw =
-            frame.payload.toString(
-              "utf8",
-            );
-
-          const message =
-            parseClientMessage(
-              raw,
-            );
-
-          if (!message) {
-            sendError(
-              socket,
-              "INVALID_MESSAGE",
-              "Invalid message",
-            );
-
-            continue;
-          }
-
-          // JOIN
-          if (
-            message.type === "join"
+            frame.opcode ===
+            0x0
           ) {
             if (
-              client.roomId
+              fragmentedMessage ===
+                null ||
+              fragmentedOpcode ===
+                null
             ) {
               sendError(
                 socket,
-                "ALREADY_JOINED",
-                "Client already joined a room",
+                "INVALID_FRAME",
+                "Unexpected continuation frame",
               );
 
-              continue;
+              socket.destroy();
+              return;
             }
 
-            client.clientId =
-              message.clientId;
-
-            client.roomId =
-              message.roomId;
-
-            const room =
-              roomManager.getOrCreateRoom(
-                message.roomId,
-              );
-
-            sendMessage(
-              socket,
-              {
-                type: "welcome",
-                clientId:
-                  message.clientId,
-              },
+            fragmentedMessage.push(
+              frame.payload,
             );
 
-            sendSnapshot(
-              socket,
-              room,
-            );
-
-            room.addClient({
-              clientId:
-                message.clientId,
-              socket,
-            });
-
-            room.broadcast(
-              JSON.stringify({
-                type:
-                  "participant_joined",
-                clientId:
-                  message.clientId,
-              }),
-              message.clientId,
-            );
-
-            console.log(
-              `${message.clientId} joined ${message.roomId}`,
-            );
-
-            continue;
-          }
-
-          // Must join before other messages
-          if (
-            !client.roomId ||
-            !client.clientId
-          ) {
-            sendError(
-              socket,
-              "NOT_JOINED",
-              "Join a room first",
-            );
-
-            continue;
-          }
-
-          const room =
-            roomManager.getRoom(
-              client.roomId,
-            );
-
-          if (!room) {
-            sendError(
-              socket,
-              "ROOM_NOT_FOUND",
-              "Room no longer exists",
-            );
-
-            continue;
-          }
-
-          // CURSOR
-          if (
-            message.type ===
-            "cursor"
-          ) {
-            const previous =
-              room.getCursor(
-                client.clientId,
-              );
+            fragmentedSize +=
+              frame.payload.length;
 
             if (
-              previous &&
-              message.seq <=
-                previous.seq
+              fragmentedSize >
+              MAX_MESSAGE_SIZE
             ) {
-              continue;
+              sendError(
+                socket,
+                "MESSAGE_TOO_LARGE",
+                "WebSocket message is too large",
+              );
+
+              socket.destroy();
+              return;
             }
 
-            room.updateCursor({
-              clientId:
-                client.clientId,
-              x: message.x,
-              y: message.y,
-              seq: message.seq,
-              timestamp:
-                message.timestamp,
-            });
+            if (
+              frame.fin
+            ) {
+              const completePayload =
+                Buffer.concat(
+                  fragmentedMessage,
+                );
 
-            room.broadcast(
-              JSON.stringify({
-                type: "cursor",
-                clientId:
-                  client.clientId,
-                seq:
-                  message.seq,
-                x: message.x,
-                y: message.y,
-                timestamp:
-                  message.timestamp,
-              }),
-              client.clientId,
-            );
+              if (
+                fragmentedOpcode ===
+                0x1
+              ) {
+                processTextMessage(
+                  completePayload,
+                );
+              }
+
+              resetFragmentation();
+            }
 
             continue;
           }
 
-          // REACTION
           if (
-            message.type ===
-            "reaction"
+            frame.opcode !==
+              0x1 &&
+            frame.opcode !==
+              0x2
           ) {
-            room.broadcast(
-              JSON.stringify({
-                type: "reaction",
-                clientId:
-                  client.clientId,
-                seq:
-                  message.seq,
-                reaction:
-                  message.reaction,
-                x: message.x,
-                y: message.y,
-                timestamp:
-                  message.timestamp,
-              }),
-              client.clientId,
-            );
-
-            continue;
-          }
-
-          // LATENCY PING
-          if (
-            message.type ===
-            "ping"
-          ) {
-            sendMessage(
+            sendError(
               socket,
-              {
-                type: "pong",
-                timestamp:
-                  message.timestamp,
-              },
+              "INVALID_FRAME",
+              "Unsupported WebSocket opcode",
             );
 
+            socket.destroy();
+            return;
+          }
+
+          if (
+            fragmentedMessage !==
+            null
+          ) {
+            sendError(
+              socket,
+              "INVALID_FRAME",
+              "New data frame before previous message completed",
+            );
+
+            socket.destroy();
+            return;
+          }
+
+          if (
+            frame.fin
+          ) {
+            if (
+              frame.opcode ===
+              0x1
+            ) {
+              processTextMessage(
+                frame.payload,
+              );
+            }
+
             continue;
+          }
+
+          fragmentedMessage =
+            [
+              frame.payload,
+            ];
+
+          fragmentedOpcode =
+            frame.opcode;
+
+          fragmentedSize =
+            frame.payload.length;
+
+          if (
+            fragmentedSize >
+            MAX_MESSAGE_SIZE
+          ) {
+            sendError(
+              socket,
+              "MESSAGE_TOO_LARGE",
+              "WebSocket message is too large",
+            );
+
+            socket.destroy();
+            return;
           }
         }
       },
@@ -687,7 +932,9 @@ server.on(
     socket.on(
       "close",
       () => {
-        clients.delete(client);
+        clients.delete(
+          client,
+        );
 
         cleanupClient(
           client,
@@ -707,35 +954,47 @@ server.on(
   },
 );
 
-// Server heartbeat
 const heartbeatTimer =
   setInterval(() => {
-    for (const client of clients) {
+    for (
+      const client of clients
+    ) {
       if (
         client.socket.destroyed
       ) {
-        clients.delete(client);
+        clients.delete(
+          client,
+        );
 
-        cleanupClient(client);
+        cleanupClient(
+          client,
+        );
 
         continue;
       }
 
-      if (!client.isAlive) {
+      if (
+        !client.isAlive
+      ) {
         console.log(
           "Terminating inactive WebSocket connection",
         );
 
-        clients.delete(client);
+        clients.delete(
+          client,
+        );
 
         client.socket.destroy();
 
-        cleanupClient(client);
+        cleanupClient(
+          client,
+        );
 
         continue;
       }
 
-      client.isAlive = false;
+      client.isAlive =
+        false;
 
       sendPing(
         client.socket,
@@ -775,8 +1034,10 @@ process.on(
 
     clients.clear();
 
-    server.close(() => {
-      process.exit(0);
-    });
+    server.close(
+      () => {
+        process.exit(0);
+      },
+    );
   },
 );
