@@ -8,7 +8,6 @@ import type {
 
 import { CursorRenderer } from "./rendering/cursorRenderer";
 import { InterpolationBuffer } from "./interpolation/interpolation";
-import { Reaction } from "./components/Reaction";
 import { ParticipantList } from "./components/ParticipantList";
 
 type ReactionState = {
@@ -47,19 +46,16 @@ function App() {
     useRef<CursorRenderer | null>(null);
 
   const interpolationRef =
-    useRef<InterpolationBuffer | null>(
-      null,
-    );
+    useRef<InterpolationBuffer | null>(null);
 
   const remoteCursorsRef =
-    useRef<Record<string, RemoteCursor>>(
-      {},
-    );
+    useRef<Record<string, RemoteCursor>>({});
 
-  const localPositionRef = useRef({
-    x: 0.5,
-    y: 0.5,
-  });
+  const localPositionRef =
+    useRef({
+      x: 0.5,
+      y: 0.5,
+    });
 
   const reactionIdRef =
     useRef(0);
@@ -77,15 +73,14 @@ function App() {
     useState(false);
 
   const [participants, setParticipants] =
-    useState<
-      Record<string, Participant>
-    >({});
+    useState<Record<string, Participant>>({});
 
   const [reactions, setReactions] =
     useState<ReactionState[]>([]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas =
+      canvasRef.current;
 
     if (!canvas) {
       return;
@@ -102,178 +97,207 @@ function App() {
 
     setClientId(currentClientId);
 
-    const syncEngine = new SyncEngine({
-      roomId: "demo-room",
-      clientId: currentClientId,
+    const syncEngine =
+      new SyncEngine({
+        roomId: "demo-room",
+        clientId: currentClientId,
 
-      onConnected: () => {
-        setConnected(true);
-      },
+        onConnected: () => {
+          setConnected(true);
+        },
 
-      onDisconnected: () => {
-        setConnected(false);
-        setLatency(null);
-      },
+        onDisconnected: () => {
+          setConnected(false);
+          setLatency(null);
+        },
 
-      onLatency: (value) => {
-        setLatency(value);
-      },
+        onLatency: (value) => {
+          setLatency(value);
+        },
 
-      onSnapshot: (snapshot) => {
-        const nextParticipants: Record<
-          string,
-          Participant
-        > = {};
+        onSnapshot: (snapshot) => {
+          const nextParticipants:
+            Record<string, Participant> = {};
 
-        const nextCursors: Record<
-          string,
-          RemoteCursor
-        > = {};
+          const nextCursors:
+            Record<string, RemoteCursor> = {};
 
-        const now = Date.now();
+          const now =
+            Date.now();
 
-        for (const participant of snapshot) {
-          if (
-            participant.clientId ===
-            currentClientId
+          for (
+            const participant of snapshot
           ) {
-            continue;
+            if (
+              participant.clientId ===
+              currentClientId
+            ) {
+              continue;
+            }
+
+            nextParticipants[
+              participant.clientId
+            ] = participant;
+
+            const cursor:
+              RemoteCursor = {
+              clientId:
+                participant.clientId,
+              x: participant.x,
+              y: participant.y,
+              seq: 0,
+              timestamp: now,
+            };
+
+            nextCursors[
+              participant.clientId
+            ] = cursor;
+
+            interpolationRef.current?.addSample(
+              cursor,
+            );
           }
 
-          nextParticipants[
-            participant.clientId
-          ] = participant;
+          setParticipants(
+            nextParticipants,
+          );
 
-          const cursor: RemoteCursor = {
+          remoteCursorsRef.current =
+            nextCursors;
+        },
+
+        onParticipantJoined: (
+          joinedClientId,
+        ) => {
+          if (
+            joinedClientId ===
+            currentClientId
+          ) {
+            return;
+          }
+
+          const cursor:
+            RemoteCursor = {
             clientId:
-              participant.clientId,
-            x: participant.x,
-            y: participant.y,
+              joinedClientId,
+            x: 0.5,
+            y: 0.5,
             seq: 0,
-            timestamp: now,
+            timestamp: Date.now(),
           };
 
-          nextCursors[
-            participant.clientId
+          remoteCursorsRef.current[
+            joinedClientId
           ] = cursor;
 
           interpolationRef.current?.addSample(
             cursor,
           );
-        }
 
-        setParticipants(
-          nextParticipants,
-        );
+          setParticipants(
+            (current) => ({
+              ...current,
 
-        remoteCursorsRef.current =
-          nextCursors;
-      },
+              [joinedClientId]: {
+                clientId:
+                  joinedClientId,
+                x: 0.5,
+                y: 0.5,
+              },
+            }),
+          );
+        },
 
-      onParticipantJoined: (
-        joinedClientId,
-      ) => {
-        if (
-          joinedClientId ===
-          currentClientId
-        ) {
-          return;
-        }
-
-        const cursor: RemoteCursor = {
-          clientId:
-            joinedClientId,
-          x: 0.5,
-          y: 0.5,
-          seq: 0,
-          timestamp: Date.now(),
-        };
-
-        remoteCursorsRef.current[
-          joinedClientId
-        ] = cursor;
-
-        interpolationRef.current?.addSample(
-          cursor,
-        );
-
-        setParticipants((current) => ({
-          ...current,
-
-          [joinedClientId]: {
-            clientId:
-              joinedClientId,
-            x: 0.5,
-            y: 0.5,
-          },
-        }));
-      },
-
-      onParticipantLeft: (
-        leftClientId,
-      ) => {
-        setParticipants((current) => {
-          const next = {
-            ...current,
-          };
-
-          delete next[leftClientId];
-
-          return next;
-        });
-
-        delete remoteCursorsRef.current[
-          leftClientId
-        ];
-
-        interpolationRef.current?.removeCursor(
+        onParticipantLeft: (
           leftClientId,
-        );
-      },
+        ) => {
+          setParticipants(
+            (current) => {
+              const next = {
+                ...current,
+              };
 
-      onCursor: (cursor) => {
-        interpolationRef.current?.addSample(
-          cursor,
-        );
+              delete next[
+                leftClientId
+              ];
 
-        remoteCursorsRef.current[
-          cursor.clientId
-        ] = cursor;
+              return next;
+            },
+          );
 
-        setParticipants((current) => ({
-          ...current,
+          delete remoteCursorsRef.current[
+            leftClientId
+          ];
 
-          [cursor.clientId]: {
-            clientId:
-              cursor.clientId,
-            x: cursor.x,
-            y: cursor.y,
-          },
-        }));
-      },
+          interpolationRef.current?.removeCursor(
+            leftClientId,
+          );
+        },
 
-      onReaction: (
-        reactionClientId,
-        x,
-        y,
-      ) => {
-        reactionIdRef.current++;
+        onCursor: (cursor) => {
+          interpolationRef.current?.addSample(
+            cursor,
+          );
 
-        const reaction: ReactionState =
-          {
-            id: `${reactionClientId}-${reactionIdRef.current}`,
+          remoteCursorsRef.current[
+            cursor.clientId
+          ] = cursor;
+
+          setParticipants(
+            (current) => ({
+              ...current,
+
+              [cursor.clientId]: {
+                clientId:
+                  cursor.clientId,
+                x: cursor.x,
+                y: cursor.y,
+              },
+            }),
+          );
+        },
+
+        onReaction: (
+          reactionClientId,
+          x,
+          y,
+        ) => {
+          reactionIdRef.current++;
+
+          const reaction:
+            ReactionState = {
+            id:
+              `remote-${reactionClientId}-${reactionIdRef.current}`,
             clientId:
               reactionClientId,
             x,
             y,
           };
 
-        setReactions((current) => [
-          ...current,
-          reaction,
-        ]);
-      },
-    });
+          console.log(
+            "REMOTE REACTION RECEIVED",
+            reaction,
+          );
+
+          setReactions(
+            (current) => [
+              ...current,
+              reaction,
+            ],
+          );
+
+          setTimeout(() => {
+            setReactions(
+              (current) =>
+                current.filter(
+                  (item) =>
+                    item.id !==
+                    reaction.id,
+                ),
+            );
+          }, 5000);
+        },
+      });
 
     syncEngineRef.current =
       syncEngine;
@@ -283,14 +307,17 @@ function App() {
     let animationFrame = 0;
 
     const render = () => {
-      const now = Date.now();
+      const now =
+        Date.now();
 
-      const interpolatedCursors: RemoteCursor[] =
-        [];
+      const interpolatedCursors:
+        RemoteCursor[] = [];
 
-      for (const cursor of Object.values(
-        remoteCursorsRef.current,
-      )) {
+      for (
+        const cursor of Object.values(
+          remoteCursorsRef.current,
+        )
+      ) {
         const position =
           interpolationRef.current?.getPosition(
             cursor.clientId,
@@ -320,7 +347,9 @@ function App() {
     };
 
     animationFrame =
-      requestAnimationFrame(render);
+      requestAnimationFrame(
+        render,
+      );
 
     return () => {
       cancelAnimationFrame(
@@ -340,6 +369,42 @@ function App() {
     };
   }, []);
 
+  const getCanvasPosition = (
+    event: React.MouseEvent<HTMLCanvasElement>,
+  ) => {
+    const canvas =
+      canvasRef.current;
+
+    if (!canvas) {
+      return null;
+    }
+
+    const rect =
+      canvas.getBoundingClientRect();
+
+    return {
+      x: Math.max(
+        0,
+        Math.min(
+          1,
+          (event.clientX -
+            rect.left) /
+            rect.width,
+        ),
+      ),
+
+      y: Math.max(
+        0,
+        Math.min(
+          1,
+          (event.clientY -
+            rect.top) /
+            rect.height,
+        ),
+      ),
+    };
+  };
+
   const handleMouseMove = (
     event: React.MouseEvent<HTMLCanvasElement>,
   ) => {
@@ -347,143 +412,142 @@ function App() {
       return;
     }
 
-    const canvas = canvasRef.current;
+    const position =
+      getCanvasPosition(event);
 
-    if (!canvas) {
+    if (!position) {
       return;
     }
 
-    const rect =
-      canvas.getBoundingClientRect();
-
-    const x = Math.max(
-      0,
-      Math.min(
-        1,
-        (event.clientX -
-          rect.left) /
-          rect.width,
-      ),
-    );
-
-    const y = Math.max(
-      0,
-      Math.min(
-        1,
-        (event.clientY -
-          rect.top) /
-          rect.height,
-      ),
-    );
-
-    localPositionRef.current = {
-      x,
-      y,
-    };
+    localPositionRef.current =
+      position;
 
     syncEngineRef.current?.sendCursor(
-      x,
-      y,
+      position.x,
+      position.y,
     );
   };
 
-  const handleClick = (
+  const handleCanvasClick = (
     event: React.MouseEvent<HTMLCanvasElement>,
   ) => {
-    const canvas = canvasRef.current;
+    const position =
+      getCanvasPosition(event);
 
-    if (!canvas) {
+    if (!position) {
       return;
     }
 
-    const rect =
-      canvas.getBoundingClientRect();
-
-    const x = Math.max(
-      0,
-      Math.min(
-        1,
-        (event.clientX -
-          rect.left) /
-          rect.width,
-      ),
+    console.log(
+      "CANVAS CLICK",
+      position,
     );
 
-    const y = Math.max(
-      0,
-      Math.min(
-        1,
-        (event.clientY -
-          rect.top) /
-          rect.height,
-      ),
+    localPositionRef.current =
+      position;
+
+    /*
+     * Cursor update
+     */
+    syncEngineRef.current?.sendCursor(
+      position.x,
+      position.y,
     );
 
+    /*
+     * Create local reaction
+     */
     reactionIdRef.current++;
 
-    const localReaction: ReactionState =
-      {
-        id: `local-${reactionIdRef.current}`,
-        clientId: "local",
-        x,
-        y,
-      };
+    const reaction:
+      ReactionState = {
+      id:
+        `local-${reactionIdRef.current}`,
 
-    setReactions((current) => [
-      ...current,
-      localReaction,
-    ]);
+      clientId:
+        clientId || "local",
 
-    syncEngineRef.current?.sendReaction(
-      x,
-      y,
+      x: position.x,
+      y: position.y,
+    };
+
+    console.log(
+      "LOCAL REACTION CREATED",
+      reaction,
     );
 
-    if (!cursorLocked) {
-      setCursorLocked(true);
+    /*
+     * THIS IS THE IMPORTANT PART.
+     *
+     * Add the reaction directly
+     * to React state.
+     */
+    setReactions(
+      (current) => [
+        ...current,
+        reaction,
+      ],
+    );
 
-      localPositionRef.current = {
-        x,
-        y,
-      };
-
-      syncEngineRef.current?.sendCursor(
-        x,
-        y,
+    /*
+     * Send reaction to server.
+     */
+    if (syncEngineRef.current) {
+      console.log(
+        "SENDING REACTION",
       );
-    } else {
-      setCursorLocked(false);
 
-      localPositionRef.current = {
-        x,
-        y,
-      };
-
-      syncEngineRef.current?.sendCursor(
-        x,
-        y,
+      syncEngineRef.current.sendReaction(
+        position.x,
+        position.y,
       );
     }
+
+    /*
+     * Keep the heart visible
+     * for 5 seconds.
+     */
+    setTimeout(() => {
+      setReactions(
+        (current) =>
+          current.filter(
+            (item) =>
+              item.id !==
+              reaction.id,
+          ),
+      );
+    }, 5000);
+
+    /*
+     * Lock / unlock cursor.
+     */
+    setCursorLocked(
+      (current) => !current,
+    );
   };
 
-  const participantList: Participant[] =
-    [
+  const participantList:
+    Participant[] = [
       ...(clientId
         ? [
             {
               clientId,
-              x: localPositionRef.current
-                .x,
-              y: localPositionRef.current
-                .y,
+              x:
+                localPositionRef
+                  .current.x,
+              y:
+                localPositionRef
+                  .current.y,
             },
           ]
         : []),
 
-      ...Object.values(participants),
+      ...Object.values(
+        participants,
+      ),
     ];
 
-  const latencyLabel =
+  const latencyText =
     latency === null
       ? "--"
       : `${latency} ms`;
@@ -500,252 +564,241 @@ function App() {
             : "High";
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        padding: "24px",
-        boxSizing: "border-box",
-        fontFamily:
-          "Arial, sans-serif",
-        background: "#f8fafc",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent:
-            "space-between",
-          alignItems:
-            "flex-start",
-          marginBottom: "16px",
-          gap: "16px",
-        }}
-      >
-        <div>
-          <h1
-            style={{
-              margin: 0,
-            }}
-          >
-            Real-Time Multiplayer Sync
-          </h1>
+    <main className="app-shell">
+      <div className="app-content">
 
-          <p
-            style={{
-              marginTop: "8px",
-              marginBottom: 0,
-              color: "#64748b",
-            }}
-          >
-            Move your cursor. Click
-            to lock/unlock its
-            position.
-          </p>
-        </div>
+        <header className="header">
 
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-            flexWrap: "wrap",
-            justifyContent: "flex-end",
-          }}
-        >
-          <div
-            style={{
-              padding:
-                "8px 12px",
-              borderRadius:
-                "8px",
-              background:
-                connected
-                  ? "#dcfce7"
-                  : "#fee2e2",
-              color: connected
-                ? "#166534"
-                : "#991b1b",
-              fontSize:
-                "14px",
-              fontWeight: 600,
-            }}
-          >
-            {connected
-              ? "Connected"
-              : "Disconnected"}
+          <div className="brand-section">
+
+            <div className="eyebrow">
+              <span className="eyebrow-dot" />
+              Live Collaboration
+            </div>
+
+            <h1 className="title">
+              Real-Time{" "}
+              <span className="title-gradient">
+                Multiplayer
+              </span>
+            </h1>
+
+            <p className="subtitle">
+              Cursor &amp; state
+              synchronization over
+              raw WebSockets. Move
+              your cursor, click to
+              react, and collaborate
+              with everyone in the
+              room.
+            </p>
+
           </div>
 
-          <div
-            style={{
-              padding:
-                "8px 12px",
-              borderRadius:
-                "8px",
-              background:
-                "#ffffff",
-              border:
-                "1px solid #e2e8f0",
-              color: "#334155",
-              fontSize:
-                "14px",
-              fontWeight: 600,
-            }}
-          >
-            RTT: {latencyLabel}
+          <div className="status-group">
+
+            <div className="status-card">
+
+              <span
+                className={
+                  connected
+                    ? "status-indicator connected"
+                    : "status-indicator disconnected"
+                }
+              />
+
+              <span className="status-value">
+                {connected
+                  ? "Connected"
+                  : "Disconnected"}
+              </span>
+
+            </div>
+
+            <div className="status-card">
+              <span className="status-muted">
+                RTT
+              </span>
+
+              <span className="status-value">
+                {latencyText}
+              </span>
+            </div>
+
+            <div className="status-card">
+              <span className="status-muted">
+                Network
+              </span>
+
+              <span className="status-value">
+                {latencyQuality}
+              </span>
+            </div>
+
           </div>
 
-          <div
-            style={{
-              padding:
-                "8px 12px",
-              borderRadius:
-                "8px",
-              background:
-                "#ffffff",
-              border:
-                "1px solid #e2e8f0",
-              color: "#64748b",
-              fontSize:
-                "13px",
-            }}
-          >
-            {latencyQuality}
-          </div>
-        </div>
-      </div>
+        </header>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "20px",
-          alignItems:
-            "flex-start",
-          flexWrap: "wrap",
-        }}
-      >
-        <div
-          style={{
-            flex: "1 1 700px",
-            minWidth: 0,
-          }}
-        >
-          <div
-            style={{
-              marginBottom:
-                "12px",
-              display: "flex",
-              justifyContent:
-                "space-between",
-              alignItems:
-                "center",
-              fontSize:
-                "14px",
-              fontWeight: 600,
-            }}
-          >
-            <span>
-              Participants:{" "}
-              {participantList.length}
-            </span>
+        <section className="workspace">
 
-            <span
-              style={{
-                color:
+          <div className="canvas-section">
+
+            <div className="canvas-header">
+
+              <div className="canvas-title">
+                <span className="canvas-title-dot" />
+                Multiplayer Workspace
+              </div>
+
+              <div
+                className={
                   cursorLocked
-                    ? "#b45309"
-                    : "#64748b",
-                fontWeight: 500,
-              }}
-            >
-              Cursor:{" "}
-              {cursorLocked
-                ? "Locked"
-                : "Following mouse"}
-            </span>
+                    ? "cursor-mode locked"
+                    : "cursor-mode"
+                }
+              >
+                {cursorLocked
+                  ? "Cursor locked"
+                  : "Click to react"}
+              </div>
+
+            </div>
+
+            <div className="canvas-wrapper">
+
+              <canvas
+                ref={canvasRef}
+                width={1200}
+                height={700}
+                onMouseMove={
+                  handleMouseMove
+                }
+                onClick={
+                  handleCanvasClick
+                }
+                style={{
+                  cursor:
+                    cursorLocked
+                      ? "default"
+                      : "crosshair",
+                }}
+              />
+
+              {/*
+               * DIRECT REACTION LAYER
+               *
+               * No Reaction component.
+               * No animation.
+               * No animationend.
+               *
+               * This must display a
+               * visible heart.
+               */}
+              {reactions.map(
+                (reaction) => (
+                  <div
+                    key={
+                      reaction.id
+                    }
+                    style={{
+                      position:
+                        "absolute",
+
+                      left:
+                        `${reaction.x * 100}%`,
+
+                      top:
+                        `${reaction.y * 100}%`,
+
+                      transform:
+                        "translate(-50%, -50%)",
+
+                      width:
+                        "70px",
+
+                      height:
+                        "70px",
+
+                      display:
+                        "flex",
+
+                      alignItems:
+                        "center",
+
+                      justifyContent:
+                        "center",
+
+                      background:
+                        "rgba(244, 63, 94, 0.12)",
+
+                      border:
+                        "2px solid rgba(244, 63, 94, 0.5)",
+
+                      borderRadius:
+                        "50%",
+
+                      fontSize:
+                        "40px",
+
+                      lineHeight:
+                        "1",
+
+                      zIndex:
+                        999999,
+
+                      pointerEvents:
+                        "none",
+
+                      boxShadow:
+                        "0 0 30px rgba(244, 63, 94, 0.45)",
+                    }}
+                  >
+                    ❤️
+                  </div>
+                ),
+              )}
+
+            </div>
+
+            <div className="workspace-footer">
+
+              <div className="footer-item">
+                <span className="footer-dot" />
+                30 FPS SYNC
+              </div>
+
+              <div className="footer-item">
+                <span className="footer-dot" />
+                INTERPOLATED
+              </div>
+
+              <div className="footer-item">
+                <span className="footer-dot" />
+                RAW WEBSOCKET
+              </div>
+
+              <div className="footer-item">
+                <span className="footer-dot" />
+                SEQUENCE ORDERED
+              </div>
+
+            </div>
+
           </div>
 
-          <div
-            style={{
-              position:
-                "relative",
-              width: "100%",
-              maxWidth:
-                "1200px",
-            }}
-          >
-            <canvas
-              ref={canvasRef}
-              width={1200}
-              height={700}
-              onMouseMove={
-                handleMouseMove
-              }
-              onClick={
-                handleClick
-              }
-              style={{
-                width: "100%",
-                maxWidth:
-                  "1200px",
-                height: "auto",
-                aspectRatio:
-                  "12 / 7",
-                display: "block",
-                border:
-                  "2px solid #222",
-                borderRadius:
-                  "12px",
-                background:
-                  "#ffffff",
-                cursor:
-                  cursorLocked
-                    ? "default"
-                    : "crosshair",
-              }}
-            />
+          <ParticipantList
+            participants={
+              participantList
+            }
+            localClientId={
+              clientId
+            }
+          />
 
-            {reactions.map(
-              (reaction) => (
-                <Reaction
-                  key={
-                    reaction.id
-                  }
-                  x={
-                    reaction.x
-                  }
-                  y={
-                    reaction.y
-                  }
-                  onComplete={() => {
-                    setReactions(
-                      (
-                        current,
-                      ) =>
-                        current.filter(
-                          (
-                            item,
-                          ) =>
-                            item.id !==
-                            reaction.id,
-                        ),
-                    );
-                  }}
-                />
-              ),
-            )}
-          </div>
-        </div>
+        </section>
 
-        <ParticipantList
-          participants={
-            participantList
-          }
-          localClientId={
-            clientId
-          }
-        />
       </div>
-    </div>
+    </main>
   );
 }
 

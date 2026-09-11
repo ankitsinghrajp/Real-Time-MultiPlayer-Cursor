@@ -10,72 +10,99 @@ export function ParticipantList({
   localClientId,
 }: ParticipantListProps) {
   return (
-    <div
-      style={{
-        width: "240px",
-        padding: "16px",
-        border: "1px solid #e5e7eb",
-        borderRadius: "12px",
-        background: "#ffffff",
-        boxSizing: "border-box",
-      }}
-    >
-      <div
-        style={{
-          fontSize: "15px",
-          fontWeight: 700,
-          marginBottom: "12px",
-        }}
-      >
-        Participants ({participants.length})
+    <aside className="participants-panel">
+
+      <div className="panel-header">
+
+        <div className="panel-title">
+          Participants
+        </div>
+
+        <div className="panel-count">
+          {participants.length}
+        </div>
+
       </div>
 
-      {participants.length === 0 && (
-        <div
-          style={{
-            fontSize: "13px",
-            color: "#6b7280",
-          }}
-        >
-          No participants
-        </div>
-      )}
+      <div className="participant-list">
 
-      {participants.map((participant) => {
-        const isLocal =
-          participant.clientId === localClientId;
+        {participants.length === 0 && (
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              •
+            </div>
 
-        return (
-          <div
-            key={participant.clientId}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-              padding: "7px 0",
-              fontSize: "13px",
-            }}
-          >
-            <div
-              style={{
-                width: "9px",
-                height: "9px",
-                borderRadius: "50%",
-                background: isLocal
-                  ? "#2563eb"
-                  : "#ef4444",
-                flexShrink: 0,
-              }}
-            />
-
-            <span>
-              {isLocal
-                ? "You"
-                : `User ${participant.clientId.slice(0, 6)}`}
-            </span>
+            <div>
+              Waiting for participants
+            </div>
           </div>
-        );
-      })}
-    </div>
+        )}
+
+        {participants.map(
+          (participant) => {
+            const isLocal =
+              participant.clientId ===
+              localClientId;
+
+            const shortId =
+              participant.clientId.slice(
+                0,
+                6,
+              );
+
+            return (
+              <div
+                key={
+                  participant.clientId
+                }
+                className="participant"
+              >
+
+                <div
+                  className={
+                    isLocal
+                      ? "participant-avatar you"
+                      : "participant-avatar remote"
+                  }
+                >
+                  {isLocal
+                    ? "Y"
+                    : shortId
+                        .charAt(0)
+                        .toUpperCase()}
+                </div>
+
+                <div className="participant-info">
+
+                  <div className="participant-name">
+                    {isLocal
+                      ? "You"
+                      : `User ${shortId}`}
+                  </div>
+
+                  <div className="participant-role">
+                    {isLocal
+                      ? "Your cursor"
+                      : "Remote participant"}
+                  </div>
+
+                </div>
+
+                <div
+                  className={
+                    isLocal
+                      ? "participant-status you"
+                      : "participant-status"
+                  }
+                />
+
+              </div>
+            );
+          },
+        )}
+
+      </div>
+
+    </aside>
   );
 }
